@@ -270,6 +270,10 @@ impl<T: UserEvent> RuntimeHandle<T> for MockRuntimeHandle {
     Ok(())
   }
 
+  fn set_device_event_filter(&self, _: DeviceEventFilter) {
+    // no-op
+  }
+
   #[cfg(target_os = "android")]
   fn find_class<'a>(
     &self,
@@ -371,6 +375,14 @@ impl WindowBuilder for MockWindowBuilder {
     self
   }
 
+  fn prevent_overflow(self) -> Self {
+    self
+  }
+
+  fn prevent_overflow_with_margin(self, margin: tauri_runtime::dpi::Size) -> Self {
+    self
+  }
+
   fn resizable(self, resizable: bool) -> Self {
     self
   }
@@ -396,6 +408,10 @@ impl WindowBuilder for MockWindowBuilder {
   }
 
   fn focused(self, focused: bool) -> Self {
+    self
+  }
+
+  fn focusable(self, focusable: bool) -> Self {
     self
   }
 
@@ -566,8 +582,8 @@ impl<T: UserEvent> WebviewDispatch<T> for MockWebviewDispatcher {
     Ok(self.url.lock().unwrap().clone())
   }
 
-  fn bounds(&self) -> Result<tauri_runtime::Rect> {
-    Ok(tauri_runtime::Rect::default())
+  fn bounds(&self) -> Result<tauri_runtime::dpi::Rect> {
+    Ok(tauri_runtime::dpi::Rect::default())
   }
 
   fn position(&self) -> Result<PhysicalPosition<i32>> {
@@ -598,7 +614,7 @@ impl<T: UserEvent> WebviewDispatch<T> for MockWebviewDispatcher {
     Ok(())
   }
 
-  fn set_bounds(&self, bounds: tauri_runtime::Rect) -> Result<()> {
+  fn set_bounds(&self, bounds: tauri_runtime::dpi::Rect) -> Result<()> {
     Ok(())
   }
 
@@ -624,6 +640,14 @@ impl<T: UserEvent> WebviewDispatch<T> for MockWebviewDispatcher {
 
   fn cookies_for_url(&self, url: Url) -> Result<Vec<tauri_runtime::Cookie<'static>>> {
     Ok(Vec::new())
+  }
+
+  fn set_cookie(&self, cookie: tauri_runtime::Cookie<'_>) -> Result<()> {
+    Ok(())
+  }
+
+  fn delete_cookie(&self, cookie: tauri_runtime::Cookie<'_>) -> Result<()> {
+    Ok(())
   }
 
   fn set_auto_resize(&self, auto_resize: bool) -> Result<()> {
@@ -973,7 +997,16 @@ impl<T: UserEvent> WindowDispatch<T> for MockWindowDispatcher {
     Ok(())
   }
 
+  #[cfg(target_os = "macos")]
+  fn set_simple_fullscreen(&self, enable: bool) -> Result<()> {
+    Ok(())
+  }
+
   fn set_focus(&self) -> Result<()> {
+    Ok(())
+  }
+
+  fn set_focusable(&self, focusable: bool) -> Result<()> {
     Ok(())
   }
 

@@ -263,7 +263,7 @@ impl WindowsAttributes {
     }
   }
 
-  /// Creates the default attriute set wihtou the default app manifest.
+  /// Creates the default attribute set without the default app manifest.
   #[must_use]
   pub fn new_without_app_manifest() -> Self {
     Self {
@@ -366,6 +366,8 @@ impl Attributes {
   }
 
   /// Set the glob pattern to be used to find the capabilities.
+  ///
+  /// **WARNING:** The `removeUnusedCommands` option does not work with a custom capabilities path.
   ///
   /// **Note:** You must emit [rerun-if-changed] instructions for your capabilities directory.
   ///
@@ -497,7 +499,7 @@ pub fn try_build(attributes: Attributes) -> Result<()> {
   println!("cargo:rustc-env=TAURI_ANDROID_PACKAGE_NAME_PREFIX={android_package_prefix}");
 
   if let Some(project_dir) = env::var_os("TAURI_ANDROID_PROJECT_PATH").map(PathBuf::from) {
-    mobile::generate_gradle_files(project_dir, &config)?;
+    mobile::generate_gradle_files(project_dir)?;
   }
 
   cfg_alias("dev", is_dev());
@@ -528,7 +530,7 @@ pub fn try_build(attributes: Attributes) -> Result<()> {
 
   if let Some(paths) = &config.bundle.external_bin {
     copy_binaries(
-      ResourcePaths::new(external_binaries(paths, &target_triple).as_slice(), true),
+      ResourcePaths::new(&external_binaries(paths, &target_triple, &target), true),
       &target_triple,
       target_dir,
       manifest.package.as_ref().map(|p| &p.name),
@@ -571,8 +573,10 @@ pub fn try_build(attributes: Attributes) -> Result<()> {
       }
     }
 
-    if let Some(version) = &config.bundle.macos.minimum_system_version {
-      println!("cargo:rustc-env=MACOSX_DEPLOYMENT_TARGET={version}");
+    if !is_dev() {
+      if let Some(version) = &config.bundle.macos.minimum_system_version {
+        println!("cargo:rustc-env=MACOSX_DEPLOYMENT_TARGET={version}");
+      }
     }
   }
 

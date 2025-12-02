@@ -32,6 +32,7 @@ import {
 import { invoke } from './core'
 import {
   BackgroundThrottlingPolicy,
+  ScrollBarStyle,
   Color,
   Window,
   getCurrentWindow
@@ -106,27 +107,45 @@ export type WebviewLabel = string
  *
  * const appWindow = new Window('uniqueLabel');
  *
- * // loading embedded asset:
- * const webview = new Webview(appWindow, 'theUniqueLabel', {
- *   url: 'path/to/page.html'
- * });
- * // alternatively, load a remote URL:
- * const webview = new Webview(appWindow, 'theUniqueLabel', {
- *   url: 'https://github.com/tauri-apps/tauri'
- * });
+ * appWindow.once('tauri://created', async function () {
+ *   // `new Webview` Should be called after the window is successfully created,
+ *   // or webview may not be attached to the window since window is not created yet.
  *
- * webview.once('tauri://created', function () {
- *  // webview successfully created
- * });
- * webview.once('tauri://error', function (e) {
- *  // an error happened creating the webview
- * });
+ *   // loading embedded asset:
+ *   const webview = new Webview(appWindow, 'theUniqueLabel', {
+ *     url: 'path/to/page.html',
  *
- * // emit an event to the backend
- * await webview.emit("some-event", "data");
- * // listen to an event from the backend
- * const unlisten = await webview.listen("event-name", e => {});
- * unlisten();
+ *     // create a webview with specific logical position and size
+ *     x: 0,
+ *     y: 0,
+ *     width: 800,
+ *     height: 600,
+ *   });
+ *   // alternatively, load a remote URL:
+ *   const webview = new Webview(appWindow, 'theUniqueLabel', {
+ *     url: 'https://github.com/tauri-apps/tauri',
+ *
+ *     // create a webview with specific logical position and size
+ *     x: 0,
+ *     y: 0,
+ *     width: 800,
+ *     height: 600,
+ *   });
+ *
+ *   webview.once('tauri://created', function () {
+ *     // webview successfully created
+ *   });
+ *   webview.once('tauri://error', function (e) {
+ *     // an error happened creating the webview
+ *   });
+ *
+ *
+ *   // emit an event to the backend
+ *   await webview.emit("some-event", "data");
+ *   // listen to an event from the backend
+ *   const unlisten = await webview.listen("event-name", e => { });
+ *   unlisten();
+ * });
  * ```
  *
  * @since 2.0.0
@@ -147,14 +166,24 @@ class Webview {
    * import { Window } from '@tauri-apps/api/window'
    * import { Webview } from '@tauri-apps/api/webview'
    * const appWindow = new Window('my-label')
-   * const webview = new Webview(appWindow, 'my-label', {
-   *   url: 'https://github.com/tauri-apps/tauri'
-   * });
-   * webview.once('tauri://created', function () {
-   *  // webview successfully created
-   * });
-   * webview.once('tauri://error', function (e) {
-   *  // an error happened creating the webview
+   *
+   * appWindow.once('tauri://created', async function() {
+   *   const webview = new Webview(appWindow, 'my-label', {
+   *     url: 'https://github.com/tauri-apps/tauri',
+   *
+   *     // create a webview with specific logical position and size
+   *     x: 0,
+   *     y: 0,
+   *     width: 800,
+   *     height: 600,
+   *   });
+   *
+   *   webview.once('tauri://created', function () {
+   *     // webview successfully created
+   *   });
+   *   webview.once('tauri://error', function (e) {
+   *     // an error happened creating the webview
+   *   });
    * });
    * ```
    *
@@ -172,8 +201,10 @@ class Webview {
     if (!options?.skip) {
       invoke('plugin:webview|create_webview', {
         windowLabel: window.label,
-        label,
-        options
+        options: {
+          ...options,
+          label
+        }
       })
         .then(async () => this.emit('tauri://created'))
         .catch(async (e: string) => this.emit('tauri://error', e))
@@ -459,6 +490,23 @@ class Webview {
   async setFocus(): Promise<void> {
     return invoke('plugin:webview|set_webview_focus', {
       label: this.label
+    })
+  }
+
+  /**
+   * Sets whether the webview should automatically grow and shrink its size and position when the parent window resizes.
+   * @example
+   * ```typescript
+   * import { getCurrentWebview } from '@tauri-apps/api/webview';
+   * await getCurrentWebview().setAutoResize(true);
+   * ```
+   *
+   * @returns A promise indicating the success or failure of the operation.
+   */
+  async setAutoResize(autoResize: boolean): Promise<void> {
+    return invoke('plugin:webview|set_webview_auto_resize', {
+      label: this.label,
+      value: autoResize
     })
   }
 
@@ -800,6 +848,55 @@ interface WebviewOptions {
    * see https://docs.rs/objc2-web-kit/latest/objc2_web_kit/struct.WKWebView.html#method.allowsLinkPreview
    */
   allowLinkPreview?: boolean
+  /**
+   * Allows disabling the input accessory view on iOS.
+   *
+   * The accessory view is the view that appears above the keyboard when a text input element is focused.
+   * It usually displays a view with "Done", "Next" buttons.
+   */
+  disableInputAccessoryView?: boolean
+  /**
+   * Set a custom path for the webview's data directory (localStorage, cache, etc.) **relative to [`appDataDir()`]/${label}**.
+   * For security reasons, paths outside of that location can only be configured on the Rust side.
+   *
+   * #### Platform-specific:
+   *
+   * - **Windows**: WebViews with different values for settings like `additionalBrowserArgs`, `browserExtensionsEnabled` or `scrollBarStyle` must have different data directories.
+   * - **macOS / iOS**: Unsupported, use `dataStoreIdentifier` instead.
+   * - **Android**: Unsupported.
+   *
+   * @since 2.9.0
+   */
+  dataDirectory?: string
+  /**
+   * Initialize the WebView with a custom data store identifier. This can be seen as a replacement for `dataDirectory` which is unavailable in WKWebView.
+   * See https://developer.apple.com/documentation/webkit/wkwebsitedatastore/init(foridentifier:)?language=objc
+   *
+   * The array must contain 16 u8 numbers.
+   *
+   * #### Platform-specific:
+   *
+   * - **macOS / iOS**: Available on macOS >= 14 and iOS >= 17
+   * - **Windows / Linux / Android**: Unsupported.
+   *
+   * @since 2.9.0
+   */
+  dataStoreIdentifier?: number[]
+  /**
+   * Specifies the native scrollbar style to use with the webview.
+   * CSS styles that modify the scrollbar are applied on top of the native appearance configured here.
+   *
+   * Defaults to `default`, which is the browser default.
+   *
+   * ## Platform-specific
+   *
+   * - **Windows**:
+   *   - `fluentOverlay` requires WebView2 Runtime version 125.0.2535.41 or higher, and does nothing
+   *     on older versions.
+   *   - This option must be given the same value for all webviews.
+   * - **Linux / Android / iOS / macOS**: Unsupported. Only supports `Default` and performs no operation.
+   */
+  scrollBarStyle?: ScrollBarStyle
 }
 
 export { Webview, getCurrentWebview, getAllWebviews }

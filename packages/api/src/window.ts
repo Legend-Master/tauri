@@ -51,6 +51,11 @@ export interface Monitor {
   size: PhysicalSize
   /** the Top-left corner position of the monitor relative to the larger full screen area. */
   position: PhysicalPosition
+  /** The monitor's work area. */
+  workArea: {
+    position: PhysicalPosition
+    size: PhysicalSize
+  }
   /** The scale factor that can be used to map physical pixels to logical pixels. */
   scaleFactor: number
 }
@@ -1401,6 +1406,22 @@ class Window {
   }
 
   /**
+   * On macOS, Toggles a fullscreen mode that doesn’t require a new macOS space. Returns a boolean indicating whether the transition was successful (this won’t work if the window was already in the native fullscreen).
+   * This is how fullscreen used to work on macOS in versions before Lion. And allows the user to have a fullscreen window without using another space or taking control over the entire monitor.
+   *
+   * On other platforms, this is the same as {@link Window.setFullscreen}.
+   *
+   * @param fullscreen Whether the window should go to simple fullscreen or not.
+   * @returns A promise indicating the success or failure of the operation.
+   */
+  async setSimpleFullscreen(fullscreen: boolean): Promise<void> {
+    return invoke('plugin:window|set_simple_fullscreen', {
+      label: this.label,
+      value: fullscreen
+    })
+  }
+
+  /**
    * Bring the window to front and focus.
    * @example
    * ```typescript
@@ -1413,6 +1434,30 @@ class Window {
   async setFocus(): Promise<void> {
     return invoke('plugin:window|set_focus', {
       label: this.label
+    })
+  }
+
+  /**
+   * Sets whether the window can be focused.
+   *
+   * #### Platform-specific
+   *
+   * - **macOS**: If the window is already focused, it is not possible to unfocus it after calling `set_focusable(false)`.
+   *   In this case, you might consider calling {@link Window.setFocus} but it will move the window to the back i.e. at the bottom in terms of z-order.
+   *
+   * @example
+   * ```typescript
+   * import { getCurrentWindow } from '@tauri-apps/api/window';
+   * await getCurrentWindow().setFocusable(true);
+   * ```
+   *
+   * @param focusable Whether the window can be focused.
+   * @returns A promise indicating the success or failure of the operation.
+   */
+  async setFocusable(focusable: boolean): Promise<void> {
+    return invoke('plugin:window|set_focusable', {
+      label: this.label,
+      value: focusable
     })
   }
 
@@ -2049,6 +2094,29 @@ enum BackgroundThrottlingPolicy {
 }
 
 /**
+ * The scrollbar style to use in the webview.
+ *
+ * ## Platform-specific
+ *
+ * **Windows**: This option must be given the same value for all webviews.
+ *
+ * @since 2.8.0
+ */
+enum ScrollBarStyle {
+  /**
+   * The default scrollbar style for the webview.
+   */
+  Default = 'default',
+  /**
+   * Fluent UI style overlay scrollbars. **Windows Only**
+   *
+   * Requires WebView2 Runtime version 125.0.2535.41 or higher, does nothing on older versions,
+   * see https://learn.microsoft.com/en-us/microsoft-edge/webview2/release-notes/?tabs=dotnetcsharp#10253541
+   */
+  FluentOverlay = 'fluentOverlay'
+}
+
+/**
  * Platform-specific window effects
  *
  * @since 2.0.0
@@ -2161,7 +2229,7 @@ enum Effect {
    */
   Acrylic = 'acrylic',
   /**
-   * Tabbed effect that matches the system dark perefence **Windows 11 Only**
+   * Tabbed effect that matches the system dark preference **Windows 11 Only**
    */
   Tabbed = 'tabbed',
   /**
@@ -2222,6 +2290,14 @@ interface Effects {
 }
 
 /**
+ * Minimum margin to work area
+ */
+interface PreventOverflowMargin {
+  width: number
+  height: number
+}
+
+/**
  * Configuration for the window to create.
  *
  * @since 1.0.0
@@ -2245,6 +2321,21 @@ interface WindowOptions {
   maxWidth?: number
   /** The maximum height. Only applies if `maxWidth` is also set. */
   maxHeight?: number
+  /**
+   * Prevent the window from overflowing the working area (e.g. monitor size - taskbar size)
+   * on creation, which means the window size will be limited to `monitor size - taskbar size`
+   *
+   * Can either be set to `true` or to a {@link PreventOverflowMargin} object to set an additional margin
+   * that should be considered to determine the working area
+   * (in this case the window size will be limited to `monitor size - taskbar size - margin`)
+   *
+   * **NOTE**: The overflow check is only performed on window creation, resizes can still overflow
+   *
+   * #### Platform-specific
+   *
+   * - **iOS / Android:** Unsupported.
+   */
+  preventOverflow?: boolean | PreventOverflowMargin
   /** Whether the window is resizable or not. */
   resizable?: boolean
   /** Window title. */
@@ -2253,6 +2344,8 @@ interface WindowOptions {
   fullscreen?: boolean
   /** Whether the window will be initially focused or not. */
   focus?: boolean
+  /** Whether the window can be focused or not. */
+  focusable?: boolean
   /**
    * Whether the window is transparent or not.
    * Note that on `macOS` this requires the `macos-private-api` feature flag, enabled under `tauri.conf.json > app > macOSPrivateApi`.
@@ -2297,6 +2390,14 @@ interface WindowOptions {
    * The style of the macOS title bar.
    */
   titleBarStyle?: TitleBarStyle
+  /**
+   * The position of the window controls on macOS.
+   *
+   * Requires `titleBarStyle: 'overlay'` and `decorations: true`.
+   *
+   * @since 2.4.0
+   */
+  trafficLightPosition?: LogicalPosition
   /**
    * If `true`, sets the window title to be hidden on macOS.
    */
@@ -2388,6 +2489,28 @@ interface WindowOptions {
    * see https://docs.rs/objc2-web-kit/latest/objc2_web_kit/struct.WKWebView.html#method.allowsLinkPreview
    */
   allowLinkPreview?: boolean
+  /**
+   * Allows disabling the input accessory view on iOS.
+   *
+   * The accessory view is the view that appears above the keyboard when a text input element is focused.
+   * It usually displays a view with "Done", "Next" buttons.
+   */
+  disableInputAccessoryView?: boolean
+  /**
+   * Specifies the native scrollbar style to use with the webview.
+   * CSS styles that modify the scrollbar are applied on top of the native appearance configured here.
+   *
+   * Defaults to `default`, which is the browser default.
+   *
+   * ## Platform-specific
+   *
+   * - **Windows**:
+   *   - `fluentOverlay` requires WebView2 Runtime version 125.0.2535.41 or higher, and does nothing
+   *     on older versions.
+   *   - This option must be given the same value for all webviews.
+   * - **Linux / Android / iOS / macOS**: Unsupported. Only supports `Default` and performs no operation.
+   */
+  scrollBarStyle?: ScrollBarStyle
 }
 
 function mapMonitor(m: Monitor | null): Monitor | null {
@@ -2397,7 +2520,11 @@ function mapMonitor(m: Monitor | null): Monitor | null {
         name: m.name,
         scaleFactor: m.scaleFactor,
         position: new PhysicalPosition(m.position),
-        size: new PhysicalSize(m.size)
+        size: new PhysicalSize(m.size),
+        workArea: {
+          position: new PhysicalPosition(m.workArea.position),
+          size: new PhysicalSize(m.workArea.size)
+        }
       }
 }
 
@@ -2407,7 +2534,7 @@ function mapMonitor(m: Monitor | null): Monitor | null {
  * @example
  * ```typescript
  * import { currentMonitor } from '@tauri-apps/api/window';
- * const monitor = currentMonitor();
+ * const monitor = await currentMonitor();
  * ```
  *
  * @since 1.0.0
@@ -2424,7 +2551,7 @@ async function currentMonitor(): Promise<Monitor | null> {
  * @example
  * ```typescript
  * import { primaryMonitor } from '@tauri-apps/api/window';
- * const monitor = primaryMonitor();
+ * const monitor = await primaryMonitor();
  * ```
  *
  * @since 1.0.0
@@ -2440,7 +2567,7 @@ async function primaryMonitor(): Promise<Monitor | null> {
  * @example
  * ```typescript
  * import { monitorFromPoint } from '@tauri-apps/api/window';
- * const monitor = monitorFromPoint();
+ * const monitor = await monitorFromPoint(100.0, 200.0);
  * ```
  *
  * @since 1.0.0
@@ -2457,7 +2584,7 @@ async function monitorFromPoint(x: number, y: number): Promise<Monitor | null> {
  * @example
  * ```typescript
  * import { availableMonitors } from '@tauri-apps/api/window';
- * const monitors = availableMonitors();
+ * const monitors = await availableMonitors();
  * ```
  *
  * @since 1.0.0
@@ -2511,5 +2638,6 @@ export type {
   WindowOptions,
   Color,
   BackgroundThrottlingPolicy,
-  DragDropEvent
+  DragDropEvent,
+  ScrollBarStyle
 }

@@ -45,12 +45,14 @@ pub struct ContextData {
 }
 
 fn inject_script_hashes(document: &NodeRef, key: &AssetKey, csp_hashes: &mut CspHashes) {
-  if let Ok(inline_script_elements) = document.select("script:not(empty)") {
+  if let Ok(inline_script_elements) = document.select("script:not(:empty)") {
     let mut scripts = Vec::new();
     for inline_script_el in inline_script_elements {
       let script = inline_script_el.as_node().text_contents();
       let mut hasher = Sha256::new();
-      hasher.update(&script);
+      hasher.update(tauri_utils::html::normalize_script_for_csp(
+        script.as_bytes(),
+      ));
       let hash = hasher.finalize();
       scripts.push(format!(
         "'sha256-{}'",
@@ -309,9 +311,16 @@ pub fn context_codegen(data: ContextData) -> EmbeddedAssetsResult<TokenStream> {
     };
 
     if let Some(plist) = info_plist.as_dictionary_mut() {
-      if let Some(product_name) = &config.product_name {
-        plist.insert("CFBundleName".into(), product_name.clone().into());
+      if let Some(bundle_name) = config
+        .bundle
+        .macos
+        .bundle_name
+        .as_ref()
+        .or(config.product_name.as_ref())
+      {
+        plist.insert("CFBundleName".into(), bundle_name.as_str().into());
       }
+
       if let Some(version) = &config.version {
         let bundle_version = &config.bundle.macos.bundle_version;
         plist.insert("CFBundleShortVersionString".into(), version.clone().into());
@@ -393,9 +402,16 @@ pub fn context_codegen(data: ContextData) -> EmbeddedAssetsResult<TokenStream> {
   };
 
   let capabilities_file_path = out_dir.join(CAPABILITIES_FILE_NAME);
+  let capabilities_from_files = if capabilities_file_path.exists() {
+    let capabilities_json =
+      std::fs::read_to_string(&capabilities_file_path).expect("failed to read capabilities");
+    serde_json::from_str(&capabilities_json).expect("failed to parse capabilities")
+  } else {
+    Default::default()
+  };
   let capabilities = get_capabilities(
     &config,
-    Some(&capabilities_file_path),
+    capabilities_from_files,
     additional_capabilities.as_deref(),
   )
   .unwrap();
@@ -409,7 +425,7 @@ pub fn context_codegen(data: ContextData) -> EmbeddedAssetsResult<TokenStream> {
     identity,
   );
 
-  let runtime_authority = quote!(#root::ipc::RuntimeAuthority::new(#acl_tokens, #resolved));
+  let runtime_authority = quote!(#root::runtime_authority!(#acl_tokens, #resolved));
 
   let plugin_global_api_scripts = if config.app.with_global_tauri {
     if let Some(scripts) = tauri_utils::plugin::read_global_api_scripts(&out_dir) {
@@ -453,19 +469,24 @@ pub fn context_codegen(data: ContextData) -> EmbeddedAssetsResult<TokenStream> {
   });
 
   Ok(quote!({
-    let thread = ::std::thread::Builder::new()
-      .name(String::from("generated tauri context creation"))
-      .stack_size(8 * 1024 * 1024)
-      .spawn(|| #context)
-      .expect("unable to create thread with 8MiB stack");
+    // Wrapping in a function to make rust analyzer faster,
+    // see https://github.com/tauri-apps/tauri/pull/14457
+    fn inner<R: #root::Runtime>() -> #root::Context<R> {
+      let thread = ::std::thread::Builder::new()
+        .name(String::from("generated tauri context creation"))
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| #context)
+        .expect("unable to create thread with 8MiB stack");
 
-    match thread.join() {
-      Ok(context) => context,
-      Err(_) => {
-        eprintln!("the generated Tauri `Context` panicked during creation");
-        ::std::process::exit(101);
+      match thread.join() {
+        Ok(context) => context,
+        Err(_) => {
+          eprintln!("the generated Tauri `Context` panicked during creation");
+          ::std::process::exit(101);
+        }
       }
     }
+    inner()
   }))
 }
 

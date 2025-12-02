@@ -19,14 +19,12 @@ use serde::Serialize;
 #[cfg(feature = "isolation")]
 use serialize_to_javascript::DefaultTemplate;
 
-use crate::config::{DisabledCspModificationKind, PatternKind};
 #[cfg(feature = "isolation")]
 use crate::pattern::isolation::IsolationJavascriptCodegen;
-
-/// The token used for script nonces.
-pub const SCRIPT_NONCE_TOKEN: &str = "__TAURI_SCRIPT_NONCE__";
-/// The token used for style nonces.
-pub const STYLE_NONCE_TOKEN: &str = "__TAURI_STYLE_NONCE__";
+use crate::{
+  assets::{SCRIPT_NONCE_TOKEN, STYLE_NONCE_TOKEN},
+  config::{DisabledCspModificationKind, PatternKind},
+};
 
 // taken from <https://github.com/kuchiki-rs/kuchiki/blob/57ee6920d835315a498e748ba4b07a851ae5e498/src/serializer.rs#L12>
 fn serialize_node_ref_internal<S: Serializer>(
@@ -114,7 +112,7 @@ pub fn serialize_node(node: &NodeRef) -> Vec<u8> {
 
 /// Parses the given HTML string.
 pub fn parse(html: String) -> NodeRef {
-  kuchiki::parse_html().one(html)
+  kuchiki::parse_html().one(html).document_node
 }
 
 fn with_head<F: FnOnce(&NodeRef)>(document: &NodeRef, f: F) {
@@ -213,19 +211,14 @@ impl From<&PatternKind> for PatternObject {
 }
 
 /// Where the JavaScript is injected to
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum IsolationSide {
   /// Original frame, the Brownfield application
+  #[default]
   Original,
   /// Secure frame, the isolation security application
   Secure,
-}
-
-impl Default for IsolationSide {
-  fn default() -> Self {
-    Self::Original
-  }
 }
 
 /// Injects the Isolation JavaScript to a codegen time document.
@@ -288,9 +281,40 @@ pub fn inline_isolation(document: &NodeRef, dir: &Path) {
   }
 }
 
+/// Normalize line endings in script content to match what the browser uses for CSP hashing.
+///
+/// According to the HTML spec, browsers normalize:
+/// - `\r\n` → `\n`
+/// - `\r`   → `\n`
+pub fn normalize_script_for_csp(input: &[u8]) -> Vec<u8> {
+  let mut output = Vec::with_capacity(input.len());
+
+  let mut i = 0;
+  while i < input.len() {
+    match input[i] {
+      b'\r' => {
+        if i + 1 < input.len() && input[i + 1] == b'\n' {
+          // CRLF → LF
+          output.push(b'\n');
+          i += 2;
+        } else {
+          // Lone CR → LF
+          output.push(b'\n');
+          i += 1;
+        }
+      }
+      _ => {
+        output.push(input[i]);
+        i += 1;
+      }
+    }
+  }
+
+  output
+}
+
 #[cfg(test)]
 mod tests {
-  use kuchiki::traits::*;
 
   #[test]
   fn csp() {
@@ -299,7 +323,7 @@ mod tests {
       "<html></html>".to_string(),
     ];
     for html in htmls {
-      let document = kuchiki::parse_html().one(html);
+      let document = super::parse(html);
       let csp = "csp-string";
       super::inject_csp(&document, csp);
       assert_eq!(
@@ -309,5 +333,15 @@ mod tests {
         )
       );
     }
+  }
+
+  #[test]
+  fn normalize_script_for_csp() {
+    let js = "// Copyright 2019-2024 Tauri Programme within The Commons Conservancy\r// SPDX-License-Identifier: Apache-2.0\n// SPDX-License-Identifier: MIT\r\n\r\nwindow.__TAURI_ISOLATION_HOOK__ = (payload, options) => {\r\n  return payload\r\n}\r\n";
+    let expected = "// Copyright 2019-2024 Tauri Programme within The Commons Conservancy\n// SPDX-License-Identifier: Apache-2.0\n// SPDX-License-Identifier: MIT\n\nwindow.__TAURI_ISOLATION_HOOK__ = (payload, options) => {\n  return payload\n}\n";
+    assert_eq!(
+      super::normalize_script_for_csp(js.as_bytes()),
+      expected.as_bytes()
+    )
   }
 }
