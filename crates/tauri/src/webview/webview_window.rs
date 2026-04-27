@@ -10,6 +10,8 @@ use std::{
   sync::{Arc, MutexGuard},
 };
 
+#[cfg(all(desktop, feature = "menu"))]
+use crate::menu::{ContextMenu, Menu};
 use crate::{
   event::EventTarget,
   ipc::ScopeObject,
@@ -21,7 +23,6 @@ use crate::{
 #[cfg(desktop)]
 use crate::{
   image::Image,
-  menu::{ContextMenu, Menu},
   runtime::{window::CursorIcon, UserAttentionType},
 };
 use tauri_runtime::webview::NewWindowFeatures;
@@ -187,7 +188,7 @@ impl<'a, R: Runtime, M: Manager<R>> WebviewWindowBuilder<'a, R, M> {
   ///     Ok(())
   ///   });
   /// ```
-  #[cfg(desktop)]
+  #[cfg(all(desktop, feature = "menu"))]
   pub fn on_menu_event<F: Fn(&crate::Window<R>, crate::menu::MenuEvent) + Send + Sync + 'static>(
     mut self,
     f: F,
@@ -446,6 +447,7 @@ tauri::Builder::default()
 impl<'a, R: Runtime, M: Manager<R>> WebviewWindowBuilder<'a, R, M> {
   /// Sets the menu for the window.
   #[must_use]
+  #[cfg(all(desktop, feature = "menu"))]
   pub fn menu(mut self, menu: crate::menu::Menu<R>) -> Self {
     self.window_builder = self.window_builder.menu(menu);
     self
@@ -1572,7 +1574,7 @@ impl<R: Runtime> WebviewWindow<R> {
 }
 
 /// Menu APIs
-#[cfg(desktop)]
+#[cfg(all(desktop, feature = "menu"))]
 impl<R: Runtime> WebviewWindow<R> {
   /// Registers a global menu event listener.
   ///

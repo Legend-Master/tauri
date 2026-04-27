@@ -15,6 +15,8 @@ pub use tauri_utils::{config::Color, WindowEffect as Effect, WindowEffectState a
 #[cfg(desktop)]
 pub use crate::runtime::ProgressBarStatus;
 
+#[cfg(all(desktop, feature = "menu"))]
+use crate::menu::{ContextMenu, Menu, MenuId};
 use crate::{
   app::AppHandle,
   event::{Event, EventId, EventTarget},
@@ -33,12 +35,7 @@ use crate::{
   WindowEvent,
 };
 #[cfg(desktop)]
-use crate::{
-  image::Image,
-  menu::{ContextMenu, Menu, MenuId},
-  runtime::UserAttentionType,
-  CursorIcon,
-};
+use crate::{image::Image, runtime::UserAttentionType, CursorIcon};
 
 use serde::Serialize;
 #[cfg(windows)]
@@ -122,9 +119,9 @@ unstable_struct!(
     pub(crate) label: String,
     pub(crate) window_builder:
       <R::WindowDispatcher as WindowDispatch<EventLoopMessage>>::WindowBuilder,
-    #[cfg(desktop)]
+    #[cfg(all(desktop, feature = "menu"))]
     pub(crate) menu: Option<Menu<R>>,
-    #[cfg(desktop)]
+    #[cfg(all(desktop, feature = "menu"))]
     on_menu_event: Option<crate::app::GlobalMenuEventListener<Window<R>>>,
     window_effects: Option<WindowEffectsConfig>,
     #[cfg(target_os = "android")]
@@ -212,9 +209,9 @@ async fn create_window(app: tauri::AppHandle) {
       label: label.into(),
       window_builder: <R::WindowDispatcher as WindowDispatch<EventLoopMessage>>::WindowBuilder::new(
       ),
-      #[cfg(desktop)]
+      #[cfg(all(desktop, feature = "menu"))]
       menu: None,
-      #[cfg(desktop)]
+      #[cfg(all(desktop, feature = "menu"))]
       on_menu_event: None,
       window_effects: None,
       #[cfg(target_os = "android")]
@@ -267,9 +264,9 @@ async fn reopen_window(app: tauri::AppHandle) {
         <R::WindowDispatcher as WindowDispatch<EventLoopMessage>>::WindowBuilder::with_config(
           config,
         ),
-      #[cfg(desktop)]
+      #[cfg(all(desktop, feature = "menu"))]
       menu: None,
-      #[cfg(desktop)]
+      #[cfg(all(desktop, feature = "menu"))]
       on_menu_event: None,
     };
 
@@ -322,7 +319,7 @@ tauri::Builder::default()
   });
 ```"####
   )]
-  #[cfg(desktop)]
+  #[cfg(all(desktop, feature = "menu"))]
   pub fn on_menu_event<F: Fn(&Window<R>, crate::menu::MenuEvent) + Send + Sync + 'static>(
     mut self,
     f: F,
@@ -389,7 +386,7 @@ tauri::Builder::default()
 
     let pending = app_manager.window.prepare_window(pending)?;
 
-    #[cfg(desktop)]
+    #[cfg(all(desktop, feature = "menu"))]
     let window_menu = {
       let is_app_wide = self.menu.is_none();
       self
@@ -398,11 +395,11 @@ tauri::Builder::default()
         .map(|menu| WindowMenu { is_app_wide, menu })
     };
 
-    #[cfg(desktop)]
+    #[cfg(all(desktop, feature = "menu"))]
     let handler = app_manager
       .menu
       .prepare_window_menu_creation_handler(window_menu.as_ref(), theme);
-    #[cfg(not(desktop))]
+    #[cfg(not(all(desktop, feature = "menu")))]
     #[allow(clippy::type_complexity)]
     let handler: Option<Box<dyn Fn(tauri_runtime::window::RawWindow<'_>) + Send>> = None;
 
@@ -415,7 +412,7 @@ tauri::Builder::default()
       let window = app_manager.window.attach_window(
         self.manager.app_handle().clone(),
         detached_window.clone(),
-        #[cfg(desktop)]
+        #[cfg(all(desktop, feature = "menu"))]
         window_menu,
       );
 
@@ -430,7 +427,7 @@ tauri::Builder::default()
       window
     })?;
 
-    #[cfg(desktop)]
+    #[cfg(all(desktop, feature = "menu"))]
     if let Some(handler) = self.on_menu_event {
       window.on_menu_event(handler);
     }
@@ -460,6 +457,7 @@ tauri::Builder::default()
 impl<'a, R: Runtime, M: Manager<R>> WindowBuilder<'a, R, M> {
   /// Sets the menu for the window.
   #[must_use]
+  #[cfg(all(desktop, feature = "menu"))]
   pub fn menu(mut self, menu: Menu<R>) -> Self {
     self.menu.replace(menu);
     self
@@ -973,7 +971,7 @@ impl<R: Runtime, M: Manager<R>> WindowBuilder<'_, R, M> {
 
 /// A wrapper struct to hold the window menu state
 /// and whether it is global per-app or specific to this window.
-#[cfg(desktop)]
+#[cfg(all(desktop, feature = "menu"))]
 pub(crate) struct WindowMenu<R: Runtime> {
   pub(crate) is_app_wide: bool,
   pub(crate) menu: Menu<R>,
@@ -992,7 +990,7 @@ pub struct Window<R: Runtime> {
   pub(crate) manager: Arc<AppManager<R>>,
   pub(crate) app_handle: AppHandle<R>,
   // The menu set for this window
-  #[cfg(desktop)]
+  #[cfg(all(desktop, feature = "menu"))]
   pub(crate) menu: Arc<Mutex<Option<WindowMenu<R>>>>,
   pub(crate) resources_table: Arc<Mutex<ResourceTable>>,
 }
@@ -1029,7 +1027,7 @@ impl<R: Runtime> Clone for Window<R> {
       window: self.window.clone(),
       manager: self.manager.clone(),
       app_handle: self.app_handle.clone(),
-      #[cfg(desktop)]
+      #[cfg(all(desktop, feature = "menu"))]
       menu: self.menu.clone(),
       resources_table: self.resources_table.clone(),
     }
@@ -1102,13 +1100,13 @@ impl<R: Runtime> Window<R> {
     manager: Arc<AppManager<R>>,
     window: DetachedWindow<EventLoopMessage, R>,
     app_handle: AppHandle<R>,
-    #[cfg(desktop)] menu: Option<WindowMenu<R>>,
+    #[cfg(all(desktop, feature = "menu"))] menu: Option<WindowMenu<R>>,
   ) -> Self {
     Self {
       window,
       manager,
       app_handle,
-      #[cfg(desktop)]
+      #[cfg(all(desktop, feature = "menu"))]
       menu: Arc::new(std::sync::Mutex::new(menu)),
       resources_table: Default::default(),
     }
@@ -1185,7 +1183,7 @@ impl<R: Runtime> Window<R> {
 }
 
 /// Menu APIs
-#[cfg(desktop)]
+#[cfg(all(desktop, feature = "menu"))]
 impl<R: Runtime> Window<R> {
   /// Registers a global menu event listener.
   ///
@@ -1891,6 +1889,7 @@ impl<R: Runtime> Window<R> {
       .set_theme(theme)
       .map_err(Into::<crate::Error>::into)?;
     #[cfg(windows)]
+    #[cfg(all(desktop, feature = "menu"))]
     if let (Some(menu), Ok(hwnd)) = (self.menu(), self.hwnd()) {
       let raw_hwnd = hwnd.0 as isize;
       self.run_on_main_thread(move || {
