@@ -1,14 +1,20 @@
-// Copyright 2019-2024 Tauri Programme within The Commons Conservancy
-// SPDX-License-Identifier: Apache-2.0
-// SPDX-License-Identifier: MIT
+import { invoke } from "@tauri-apps/api/core";
 
-import 'uno.css'
-import './app.css'
-import App from './App.svelte'
-import { mount } from 'svelte'
+let greetInputEl: HTMLInputElement | null;
+let greetMsgEl: HTMLElement | null;
 
-const app = mount(App, {
-  target: document.querySelector('#app')!
-})
+async function greet() {
+  if (greetMsgEl && greetInputEl) {
+    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+    greetMsgEl.textContent = await invoke("echo", greetInputEl.value);
+  }
+}
 
-export default app
+window.addEventListener("DOMContentLoaded", () => {
+  greetInputEl = document.querySelector("#greet-input");
+  greetMsgEl = document.querySelector("#greet-msg");
+  document.querySelector("#greet-form")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    greet();
+  });
+});

@@ -1,0 +1,47 @@
+:root {
+  background-color: #24c8db;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+@keyframes tauri-fade {
+  0% {
+    background-color: #24c8db;
+  }
+
+  50% {
+    background-color: #ffc131;
+  }
+
+  100% {
+    background-color: #24c8db;
+  }
+}
+
+.tauri-pulse {
+  background-color: #24c8db;
+  animation: tauri-fade 4s ease-in-out infinite;
+}
+
+.logo {
+  display: block;
+  width: min(42vw, 42vh, 8rem);
+  height: auto;
+}
